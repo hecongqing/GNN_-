@@ -317,34 +317,79 @@ class LightGCNTrainingPipeline:
 
 def main():
     """主训练函数"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='LightGCN模型训练')
+    parser.add_argument('--config', type=str, default='config.json',
+                       help='配置文件路径')
+    parser.add_argument('--epochs', type=int, default=None,
+                       help='训练轮数（覆盖配置文件）')
+    parser.add_argument('--batch-size', type=int, default=None,
+                       help='批次大小（覆盖配置文件）')
+    parser.add_argument('--learning-rate', type=float, default=None,
+                       help='学习率（覆盖配置文件）')
+    parser.add_argument('--embedding-dim', type=int, default=None,
+                       help='嵌入维度（覆盖配置文件）')
+    
+    args = parser.parse_args()
+    
+    print("🚀 开始LightGCN模型训练...")
+    
     # 创建训练管道
-    pipeline = LightGCNTrainingPipeline()
+    pipeline = LightGCNTrainingPipeline(args.config)
+    
+    # 覆盖配置参数
+    config_override = {}
+    if args.epochs is not None:
+        config_override.setdefault('training', {})['epochs'] = args.epochs
+    if args.batch_size is not None:
+        config_override.setdefault('training', {})['batch_size'] = args.batch_size
+    if args.learning_rate is not None:
+        config_override.setdefault('training', {})['learning_rate'] = args.learning_rate
+    if args.embedding_dim is not None:
+        config_override.setdefault('model', {})['embedding_dim'] = args.embedding_dim
     
     try:
         # 训练模型
-        final_metrics = pipeline.train()
+        print(f"📊 使用配置文件: {args.config}")
+        if config_override:
+            print(f"🔧 参数覆盖: {config_override}")
+            
+        final_metrics = pipeline.train(config_override)
+        
+        print("\n🎉 训练完成！")
+        print(f"📈 最终指标:")
+        print(f"  - Precision: {final_metrics['precision']:.4f}")
+        print(f"  - Recall: {final_metrics['recall']:.4f}")
+        print(f"  - F1-Score: {final_metrics['f1']:.4f}")
         
         # 生成推荐结果示例
-        print("\n生成推荐结果示例...")
-        sample_recommendations = pipeline.generate_recommendations(k=10)
+        print("\n🎯 生成推荐结果示例...")
+        sample_recommendations = pipeline.generate_recommendations(k=5)
         
-        print(f"为前5个用户生成的推荐结果:")
+        print(f"为前3个用户生成的推荐结果:")
         current_user = None
         count = 0
-        for user_id, item_id in sample_recommendations[:50]:
+        for user_id, item_id in sample_recommendations[:15]:
             if user_id != current_user:
-                if count >= 5:
+                if count >= 3:
                     break
                 current_user = user_id
                 count += 1
-                print(f"\n用户 {user_id} 的推荐:")
+                print(f"\n👤 用户 {user_id} 的推荐:")
             print(f"  - 物品 {item_id}")
         
-        print("\n训练完成！")
+        print("\n✅ 训练和推荐生成完成！")
+        print("📁 模型已保存到: outputs/models/best_model.pt")
+        print("🔄 转换ONNX: python service/convert_to_onnx.py --model-path outputs/models/best_model.pt")
+        print("🚀 启动服务: python service/onnx_server.py --model-path outputs/models/best_model.onnx")
+        print("🎨 启动界面: python run_app.py")
         
     except Exception as e:
-        print(f"训练过程中出现错误: {e}")
+        print(f"❌ 训练过程中出现错误: {e}")
         raise
+    
+    return 0
 
 
 if __name__ == "__main__":
