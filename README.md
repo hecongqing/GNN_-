@@ -1,39 +1,33 @@
-# LightGCN推荐系统 - 阿里移动推荐算法挑战赛
+# LSTM情感分析项目
 
-基于阿里移动推荐算法挑战赛数据集，使用LightGCN（Light Graph Convolutional Network）实现的推荐系统。
+基于LSTM（Long Short-Term Memory）神经网络的中文文本情感分析系统。
 
 ## 项目简介
 
-本项目使用图神经网络中的LightGCN模型来解决移动电商平台的商品推荐问题。LightGCN是一种简化的图卷积网络，专门针对推荐系统进行了优化。
-
-## 数据集
-
-数据来源：阿里移动推荐算法挑战赛
-- 时间范围：2014.11.18 ~ 2014.12.18 (训练数据)
-- 预测目标：2014.12.19 用户购买行为
-- 数据文件：
-  - `tianchi_mobile_recommend_train_user.zip`: 用户行为数据
-  - `tianchi_mobile_recommend_train_item.csv`: 商品子集数据
+本项目使用LSTM循环神经网络实现中文文本的情感分析，能够对输入的文本进行情感极性分类（正面/负面/中性）。项目包含完整的数据处理、模型训练、评估和部署流程。
 
 ## 项目结构
 
 ```
-.
-├── README.md
-├── requirements.txt
-├── dataset/                    # 数据集存放目录
+├── 1.1循环神经网络介绍.ipynb     # RNN基础知识介绍
+├── 1.2lstm.ipynb               # LSTM原理和实现
+├── LSTM_情感分析.py            # 完整的LSTM情感分析脚本
+├── README.md                   # 项目说明文档
+├── dataset/                    # 数据集目录
 ├── outputs/                    # 输出文件
 │   ├── logs/                  # 训练日志
-│   └── models/                # 保存的模型
-├── service/                   # 服务相关
-│   ├── data_analysis.ipynb    # 数据分析notebook
-│   └── prediction_service.py  # 预测服务
-└── src/                       # 源代码
-    ├── __init__.py
-    ├── dataset.py             # 数据处理
-    ├── model.py               # LightGCN模型
+│   └── model_best.onnx        # 导出的ONNX模型
+├── requirements.txt            # Python依赖包
+├── service/                   # 模型服务
+│   ├── Untitled.ipynb         # 实验notebook
+│   ├── convert_to_onnx.py     # 模型转换ONNX格式
+│   └── onnx_server.py         # ONNX模型推理服务
+└── src/                       # 源代码目录
+    ├── __init__.py            # 包初始化文件
+    ├── app.py                 # Flask Web应用
+    ├── dataset.py             # 数据处理模块
+    ├── model.py               # LSTM模型定义
     ├── train.py               # 训练脚本
-    ├── evaluate.py            # 评估脚本
     └── utils.py               # 工具函数
 ```
 
@@ -45,125 +39,47 @@ pip install -r requirements.txt
 
 ## 使用方法
 
-### 1. 安装依赖
+### 1. 数据准备
+将情感分析数据集放入 `dataset/` 目录下，支持CSV格式，包含文本和标签列。
+
+### 2. 训练模型
 ```bash
-pip install -r requirements.txt
+python src/train.py
 ```
 
-### 2. 数据准备
-将数据文件放在 `dataset/` 目录下：
-- `tianchi_mobile_recommend_train_user.zip` 或 `tianchi_mobile_recommend_train_user.csv`
-- `tianchi_mobile_recommend_train_item.csv`
-
-如果没有真实数据，系统会自动生成示例数据用于测试。
-
-### 3. 训练模型
+### 3. 模型转换
 ```bash
-# 使用默认配置训练
-python run_train.py
-
-# 使用自定义配置
-python run_train.py --config custom_config.json
+python service/convert_to_onnx.py
 ```
 
-### 4. 评估模型
+### 4. 启动推理服务
 ```bash
-# 评估训练好的模型
-python run_evaluate.py
-
-# 指定模型路径
-python run_evaluate.py --model-path outputs/models/best_model.pt
+python service/onnx_server.py
 ```
 
-### 5. 启动推荐服务
+### 5. Web应用
 ```bash
-cd service
-python prediction_service.py --host 0.0.0.0 --port 5000
-```
-
-### 6. API使用示例
-
-#### 为用户生成推荐
-```bash
-curl "http://localhost:5000/recommend/123?k=10"
-```
-
-#### 批量推荐
-```bash
-curl -X POST "http://localhost:5000/recommend/batch" \
-  -H "Content-Type: application/json" \
-  -d '{"user_ids": [123, 456, 789], "k": 10}'
-```
-
-#### 获取相似物品
-```bash
-curl "http://localhost:5000/similar/456?k=10"
-```
-
-#### 预测评分
-```bash
-curl -X POST "http://localhost:5000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{"user_id": 123, "item_id": 456}'
+python src/app.py
 ```
 
 ## 模型特点
 
-- **LightGCN**: 简化的图卷积网络，去除了特征变换和非线性激活
-- **高效性**: 相比传统GCN，计算更加高效
-- **适用性**: 专门针对推荐系统的协同过滤场景设计
-
-## 评价指标
-
-- Precision（精确度）
-- Recall（召回率）  
-- F1-Score
-
-## 行为类型
-
-- 1: 浏览
-- 2: 收藏
-- 3: 加购物车
-- 4: 购买
-
-## 快速开始
-
-### 环境测试
-```bash
-python test_setup.py
-```
-
-### 完整流程
-```bash
-# 1. 安装依赖
-pip install -r requirements.txt
-
-# 2. 环境测试
-python test_setup.py
-
-# 3. 训练模型（使用示例数据）
-python run_train.py
-
-# 4. 评估模型
-python run_evaluate.py
-
-# 5. 启动推荐服务
-cd service
-python prediction_service.py
-```
-
-## 项目特色
-
-- ✅ **完整实现**: 从数据处理到模型部署的完整推荐系统
-- ✅ **先进算法**: 基于LightGCN的图神经网络推荐算法
-- ✅ **易于使用**: 提供简单的命令行接口和Web API
-- ✅ **可扩展性**: 模块化设计，易于扩展和定制
-- ✅ **生产就绪**: 包含完整的训练、评估和部署流程
+- **LSTM网络**: 长短期记忆网络，能够有效处理序列数据
+- **中文支持**: 使用jieba分词，支持中文文本处理
+- **多分类**: 支持正面、负面、中性等多种情感分类
+- **部署友好**: 提供ONNX模型导出和推理服务
 
 ## 技术栈
 
-- **深度学习**: PyTorch + PyTorch Geometric
+- **深度学习**: PyTorch
+- **中文处理**: jieba分词
 - **数据处理**: Pandas + NumPy
-- **可视化**: Matplotlib + Seaborn  
-- **Web服务**: Flask
-- **模型**: LightGCN (Light Graph Convolutional Networks)
+- **模型部署**: ONNX Runtime + Flask
+- **可视化**: Matplotlib + Seaborn
+
+## 快速开始
+
+1. 安装依赖：`pip install -r requirements.txt`
+2. 查看教程：打开 `1.1循环神经网络介绍.ipynb`
+3. 学习LSTM：打开 `1.2lstm.ipynb`
+4. 运行完整流程：`python LSTM_情感分析.py`
