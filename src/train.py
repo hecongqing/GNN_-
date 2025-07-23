@@ -1,13 +1,15 @@
 import os
 import torch
+import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from tqdm import tqdm
 import json
 from datetime import datetime
+from typing import Tuple
 
 from .dataset import AliRecommendDataset
-from .model import LightGCN, LightGCNTrainer
+from .model import LightGCN
 from .utils import (
     setup_logger, 
     set_random_seed, 
@@ -15,6 +17,232 @@ from .utils import (
     EarlyStopping,
     compute_metrics
 )
+
+
+class BPRLoss(nn.Module):
+    """贝叶斯个性化排序损失函数"""
+    
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self, pos_scores: torch.Tensor, neg_scores: torch.Tensor) -> torch.Tensor:
+        """
+        计算BPR损失
+        
+        Args:
+            pos_scores: 正样本分数 [batch_size]
+            neg_scores: 负样本分数 [batch_size]
+            
+        Returns:
+            BPR损失
+        """
+        diff = pos_scores - neg_scores
+        loss = -torch.log(torch.sigmoid(diff)).mean()
+        return loss
+
+
+class LightGCNTrainer:
+    """LightGCN训练器"""
+    
+    def __init__(self, model: LightGCN, device: torch.device = None):
+        """
+        初始化训练器
+        
+        Args:
+            model: LightGCN模型
+            device: 计算设备
+        """
+        self.model = model
+        self.device = device if device else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(self.device)
+        
+        # 损失函数
+        self.bpr_loss = BPRLoss()
+        
+    def create_bpr_batch(self, interaction_matrix: np.ndarray, 
+                        batch_size: int = 1024) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        创建BPR训练批次
+        
+        Args:
+            interaction_matrix: 交互矩阵
+            batch_size: 批次大小
+            
+        Returns:
+            user_indices: 用户索引
+            pos_item_indices: 正样本物品索引
+            neg_item_indices: 负样本物品索引
+        """
+        # 获取所有正样本
+        users, pos_items = np.where(interaction_matrix > 0)
+        n_positive = len(users)
+        
+        # 随机采样批次
+        batch_indices = np.random.choice(n_positive, min(batch_size, n_positive), replace=False)
+        batch_users = users[batch_indices]
+        batch_pos_items = pos_items[batch_indices]
+        
+        # 为每个正样本生成负样本
+        batch_neg_items = []
+        for user_idx in batch_users:
+            neg_item = np.random.randint(0, self.model.n_items)
+            while interaction_matrix[user_idx, neg_item] > 0:
+                neg_item = np.random.randint(0, self.model.n_items)
+            batch_neg_items.append(neg_item)
+        
+        return (
+            torch.tensor(batch_users, dtype=torch.long, device=self.device),
+            torch.tensor(batch_pos_items, dtype=torch.long, device=self.device),
+            torch.tensor(batch_neg_items, dtype=torch.long, device=self.device)
+        )
+    
+    def train_epoch(self, edge_index: torch.Tensor, interaction_matrix: np.ndarray,
+                   optimizer: torch.optim.Optimizer, batch_size: int = 1024,
+                   n_batches: int = 50) -> float:
+        """
+        训练一个epoch
+        
+        Args:
+            edge_index: 边索引
+            interaction_matrix: 交互矩阵
+            optimizer: 优化器
+            batch_size: 批次大小
+            n_batches: 批次数量
+            
+        Returns:
+            平均损失
+        """
+        self.model.train()
+        total_loss = 0.0
+        
+        for _ in range(n_batches):
+            optimizer.zero_grad()
+            
+            # 前向传播获取嵌入
+            user_embeddings, item_embeddings = self.model(edge_index)
+            
+            # 创建训练批次
+            user_indices, pos_item_indices, neg_item_indices = self.create_bpr_batch(
+                interaction_matrix, batch_size
+            )
+            
+            # 计算预测分数
+            pos_scores = self.model.predict(user_indices, pos_item_indices, 
+                                          user_embeddings, item_embeddings)
+            neg_scores = self.model.predict(user_indices, neg_item_indices,
+                                          user_embeddings, item_embeddings)
+            
+            # 计算损失
+            loss = self.bpr_loss(pos_scores, neg_scores)
+            
+            # 反向传播
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+        
+        return total_loss / n_batches
+    
+    def train(self, edge_index: torch.Tensor, interaction_matrix: np.ndarray,
+              n_epochs: int = 100, lr: float = 0.001, weight_decay: float = 1e-4,
+              batch_size: int = 1024, n_batches: int = 50, 
+              verbose: bool = True, eval_every: int = 10) -> dict:
+        """
+        完整训练过程
+        
+        Args:
+            edge_index: 边索引
+            interaction_matrix: 交互矩阵
+            n_epochs: 训练轮数
+            lr: 学习率
+            weight_decay: 权重衰减
+            batch_size: 批次大小
+            n_batches: 每个epoch的批次数量
+            verbose: 是否打印训练信息
+            eval_every: 每隔多少轮评估一次
+            
+        Returns:
+            训练历史信息
+        """
+        # 创建优化器
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        
+        # 训练历史
+        history = {
+            'loss': [],
+            'epoch': []
+        }
+        
+        # 将边索引移到设备上
+        edge_index = edge_index.to(self.device)
+        
+        if verbose:
+            print(f"开始训练LightGCN模型...")
+            print(f"设备: {self.device}")
+            print(f"用户数: {self.model.n_users}, 物品数: {self.model.n_items}")
+            print(f"嵌入维度: {self.model.embedding_dim}, GCN层数: {self.model.n_layers}")
+            print("-" * 50)
+        
+        for epoch in range(n_epochs):
+            # 训练一个epoch
+            avg_loss = self.train_epoch(
+                edge_index, interaction_matrix, optimizer, 
+                batch_size, n_batches
+            )
+            
+            # 记录训练历史
+            history['loss'].append(avg_loss)
+            history['epoch'].append(epoch)
+            
+            # 打印训练信息
+            if verbose and (epoch + 1) % eval_every == 0:
+                print(f"Epoch {epoch + 1:3d}/{n_epochs} | Loss: {avg_loss:.4f}")
+        
+        if verbose:
+            print("-" * 50)
+            print("训练完成!")
+        
+        return history
+    
+    def evaluate(self, edge_index: torch.Tensor, test_data: np.ndarray,
+                 k: int = 20) -> dict:
+        """
+        评估模型性能
+        
+        Args:
+            edge_index: 边索引
+            test_data: 测试数据 (user_id, item_id) pairs
+            k: top-k推荐
+            
+        Returns:
+            评估指标
+        """
+        self.model.eval()
+        
+        with torch.no_grad():
+            # 获取用户和物品嵌入
+            user_embeddings, item_embeddings = self.model(edge_index.to(self.device))
+            
+            # 计算推荐指标
+            hit_count = 0
+            total_users = len(set(test_data[:, 0]))
+            
+            for user_id in set(test_data[:, 0]):
+                # 获取该用户的测试物品
+                user_test_items = set(test_data[test_data[:, 0] == user_id, 1])
+                
+                # 生成推荐
+                recommendations = self.model.recommend(
+                    user_id, user_embeddings, item_embeddings, k
+                ).cpu().numpy()
+                
+                # 计算命中率
+                if len(set(recommendations) & user_test_items) > 0:
+                    hit_count += 1
+            
+            hit_rate = hit_count / total_users
+        
+        return {'hit_rate@{}'.format(k): hit_rate}
 
 
 class LightGCNTrainingPipeline:
