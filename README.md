@@ -1,39 +1,27 @@
-# LightGCN推荐系统 - 阿里移动推荐算法挑战赛
+# LightGCN推荐系统
 
-基于阿里移动推荐算法挑战赛数据集，使用LightGCN（Light Graph Convolutional Network）实现的推荐系统。
+基于LightGCN（Light Graph Convolutional Network）实现的推荐系统，支持模型训练、ONNX转换和HTTP服务部署。
 
 ## 项目简介
 
-本项目使用图神经网络中的LightGCN模型来解决移动电商平台的商品推荐问题。LightGCN是一种简化的图卷积网络，专门针对推荐系统进行了优化。
-
-## 数据集
-
-数据来源：阿里移动推荐算法挑战赛
-- 时间范围：2014.11.18 ~ 2014.12.18 (训练数据)
-- 预测目标：2014.12.19 用户购买行为
-- 数据文件：
-  - `tianchi_mobile_recommend_train_user.zip`: 用户行为数据
-  - `tianchi_mobile_recommend_train_item.csv`: 商品子集数据
+本项目使用图神经网络中的LightGCN模型来解决推荐系统问题。LightGCN是一种简化的图卷积网络，专门针对推荐系统进行了优化。项目支持完整的训练、转换和部署流程。
 
 ## 项目结构
 
 ```
-.
 ├── README.md
+├── dataset                    # 数据集存放目录
+├── outputs                    # 输出文件
 ├── requirements.txt
-├── dataset/                    # 数据集存放目录
-├── outputs/                    # 输出文件
-│   ├── logs/                  # 训练日志
-│   └── models/                # 保存的模型
-├── service/                   # 服务相关
-│   ├── data_analysis.ipynb    # 数据分析notebook
-│   └── prediction_service.py  # 预测服务
-└── src/                       # 源代码
+├── service
+│   ├── convert_to_onnx.py     # PyTorch模型转ONNX
+│   └── onnx_server.py         # ONNX推理服务器
+└── src
     ├── __init__.py
+    ├── app.py                 # 主应用程序
     ├── dataset.py             # 数据处理
     ├── model.py               # LightGCN模型
-    ├── train.py               # 训练脚本
-    ├── evaluate.py            # 评估脚本
+    ├── train.py               # 训练模块
     └── utils.py               # 工具函数
 ```
 
@@ -51,60 +39,52 @@ pip install -r requirements.txt
 ```
 
 ### 2. 数据准备
-将数据文件放在 `dataset/` 目录下：
-- `tianchi_mobile_recommend_train_user.zip` 或 `tianchi_mobile_recommend_train_user.csv`
-- `tianchi_mobile_recommend_train_item.csv`
-
-如果没有真实数据，系统会自动生成示例数据用于测试。
+将数据文件放入 `dataset/` 目录。如果没有真实数据，系统会自动生成示例数据用于测试。
 
 ### 3. 训练模型
 ```bash
-# 使用默认配置训练
-python run_train.py
-
-# 使用自定义配置
-python run_train.py --config custom_config.json
+python -m src.app --mode train --config config.json
 ```
 
-### 4. 评估模型
+### 4. 模型推理
 ```bash
-# 评估训练好的模型
-python run_evaluate.py
-
-# 指定模型路径
-python run_evaluate.py --model-path outputs/models/best_model.pt
+python -m src.app --mode inference --user-id 0 --top-k 10
 ```
 
-### 5. 启动推荐服务
+### 5. 转换为ONNX格式
 ```bash
-cd service
-python prediction_service.py --host 0.0.0.0 --port 5000
+python service/convert_to_onnx.py --model-path outputs/models/best_model.pt --save-metadata
 ```
 
-### 6. API使用示例
-
-#### 为用户生成推荐
+### 6. 启动ONNX推理服务
 ```bash
-curl "http://localhost:5000/recommend/123?k=10"
+python service/onnx_server.py --model-path outputs/models/best_model.onnx --host 0.0.0.0 --port 8080
+```
+
+### 7. API使用示例
+
+#### 单用户推荐
+```bash
+curl -X POST "http://localhost:8080/recommend" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 0, "top_k": 10}'
 ```
 
 #### 批量推荐
 ```bash
-curl -X POST "http://localhost:5000/recommend/batch" \
+curl -X POST "http://localhost:8080/recommend/batch" \
   -H "Content-Type: application/json" \
-  -d '{"user_ids": [123, 456, 789], "k": 10}'
+  -d '{"user_ids": [0, 1, 2], "top_k": 10}'
 ```
 
-#### 获取相似物品
+#### 健康检查
 ```bash
-curl "http://localhost:5000/similar/456?k=10"
+curl "http://localhost:8080/health"
 ```
 
-#### 预测评分
+#### 模型信息
 ```bash
-curl -X POST "http://localhost:5000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{"user_id": 123, "item_id": 456}'
+curl "http://localhost:8080/info"
 ```
 
 ## 模型特点
@@ -112,58 +92,35 @@ curl -X POST "http://localhost:5000/predict" \
 - **LightGCN**: 简化的图卷积网络，去除了特征变换和非线性激活
 - **高效性**: 相比传统GCN，计算更加高效
 - **适用性**: 专门针对推荐系统的协同过滤场景设计
-
-## 评价指标
-
-- Precision（精确度）
-- Recall（召回率）  
-- F1-Score
-
-## 行为类型
-
-- 1: 浏览
-- 2: 收藏
-- 3: 加购物车
-- 4: 购买
+- **部署友好**: 支持ONNX格式，便于跨平台部署
 
 ## 快速开始
 
-### 环境测试
-```bash
-python test_setup.py
-```
-
-### 完整流程
 ```bash
 # 1. 安装依赖
 pip install -r requirements.txt
 
-# 2. 环境测试
-python test_setup.py
+# 2. 训练模型（使用示例数据）
+python -m src.app --mode train
 
-# 3. 训练模型（使用示例数据）
-python run_train.py
+# 3. 转换为ONNX
+python service/convert_to_onnx.py --model-path outputs/models/best_model.pt --save-metadata
 
-# 4. 评估模型
-python run_evaluate.py
-
-# 5. 启动推荐服务
-cd service
-python prediction_service.py
+# 4. 启动推理服务
+python service/onnx_server.py --model-path outputs/models/best_model.onnx
 ```
 
 ## 项目特色
 
-- ✅ **完整实现**: 从数据处理到模型部署的完整推荐系统
-- ✅ **先进算法**: 基于LightGCN的图神经网络推荐算法
-- ✅ **易于使用**: 提供简单的命令行接口和Web API
-- ✅ **可扩展性**: 模块化设计，易于扩展和定制
-- ✅ **生产就绪**: 包含完整的训练、评估和部署流程
+- ✅ **模块化设计**: 清晰的项目结构，易于维护和扩展
+- ✅ **生产就绪**: 支持ONNX格式，便于部署
+- ✅ **API服务**: 提供完整的HTTP API接口
+- ✅ **轻量级**: 移除了不必要的可视化依赖，专注核心功能
 
 ## 技术栈
 
 - **深度学习**: PyTorch + PyTorch Geometric
 - **数据处理**: Pandas + NumPy
-- **可视化**: Matplotlib + Seaborn  
+- **模型部署**: ONNX + ONNX Runtime
 - **Web服务**: Flask
 - **模型**: LightGCN (Light Graph Convolutional Networks)
