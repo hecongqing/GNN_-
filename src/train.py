@@ -153,8 +153,11 @@ class LightGCNTrainingPipeline:
         
         return metrics
     
-    def train(self):
+    def train(self, config=None):
         """训练模型"""
+        if config:
+            self.config.update(config)
+            
         if self.dataset is None:
             self.prepare_data()
         
@@ -178,16 +181,14 @@ class LightGCNTrainingPipeline:
                 n_batches=100
             )
             
-            # 每5个epoch评估一次
-            if (epoch + 1) % 5 == 0:
+            # 每10个epoch评估一次
+            if (epoch + 1) % 10 == 0:
                 # 在测试集上评估
                 test_metrics = self.evaluate_model(self.test_matrix)
                 
                 self.logger.info(
                     f"Epoch {epoch+1}/{training_config['epochs']} - "
                     f"Train Loss: {train_loss:.4f}, "
-                    f"Test Precision: {test_metrics['precision']:.4f}, "
-                    f"Test Recall: {test_metrics['recall']:.4f}, "
                     f"Test F1: {test_metrics['f1']:.4f}"
                 )
                 
@@ -204,7 +205,8 @@ class LightGCNTrainingPipeline:
                     self.logger.info(f"早停触发，在第 {epoch+1} 轮停止训练")
                     break
             else:
-                self.logger.info(f"Epoch {epoch+1}/{training_config['epochs']} - Train Loss: {train_loss:.4f}")
+                if (epoch + 1) % 5 == 0:
+                    self.logger.info(f"Epoch {epoch+1}/{training_config['epochs']} - Train Loss: {train_loss:.4f}")
         
         self.logger.info(f"训练完成！最佳F1分数: {best_f1:.4f} (第 {best_epoch} 轮)")
         

@@ -5,13 +5,13 @@
     "dropout": 0.1
   },
   "training": {
-    "batch_size": 1024,
+    "batch_size": 512,
     "learning_rate": 0.001,
-    "epochs": 100,
+    "epochs": 50,
     "weight_decay": 1e-4
   },
   "evaluation": {
-    "k": 20,
+    "k": 10,
     "test_ratio": 0.2
   },
   "data": {

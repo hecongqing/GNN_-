@@ -84,16 +84,16 @@ class AliRecommendDataset:
         self.logger.info("创建示例用户行为数据...")
         
         np.random.seed(42)
-        n_samples = 10000
-        n_users = 1000
-        n_items = 500
+        n_samples = 5000
+        n_users = 500
+        n_items = 200
         
         data = {
             'user_id': np.random.randint(1, n_users + 1, n_samples),
             'item_id': np.random.randint(1, n_items + 1, n_samples),
-            'behavior_type': np.random.choice([1, 2, 3, 4], n_samples, p=[0.6, 0.15, 0.15, 0.1]),
-            'user_geohash': [''] * n_samples,  # 简化处理
-            'item_category': np.random.randint(1, 50, n_samples),
+            'behavior_type': np.random.choice([4], n_samples),  # 只使用购买行为
+            'user_geohash': [''] * n_samples,
+            'item_category': np.random.randint(1, 20, n_samples),
             'time': pd.date_range('2014-11-18', '2014-12-18', periods=n_samples)
         }
         

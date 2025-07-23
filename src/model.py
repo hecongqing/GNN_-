@@ -228,14 +228,13 @@ class LightGCNTrainer:
         self.bpr_loss = BPRLoss()
         
     def create_bpr_batch(self, interaction_matrix: np.ndarray, 
-                        batch_size: int = 1024, neg_ratio: int = 1) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+                        batch_size: int = 1024) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         创建BPR训练批次
         
         Args:
             interaction_matrix: 交互矩阵
             batch_size: 批次大小
-            neg_ratio: 负样本比例
             
         Returns:
             user_indices: 用户索引
@@ -254,16 +253,10 @@ class LightGCNTrainer:
         # 为每个正样本生成负样本
         batch_neg_items = []
         for user_idx in batch_users:
-            for _ in range(neg_ratio):
+            neg_item = np.random.randint(0, self.model.n_items)
+            while interaction_matrix[user_idx, neg_item] > 0:
                 neg_item = np.random.randint(0, self.model.n_items)
-                while interaction_matrix[user_idx, neg_item] > 0:
-                    neg_item = np.random.randint(0, self.model.n_items)
-                batch_neg_items.append(neg_item)
-        
-        # 扩展用户和正样本以匹配负样本
-        if neg_ratio > 1:
-            batch_users = np.repeat(batch_users, neg_ratio)
-            batch_pos_items = np.repeat(batch_pos_items, neg_ratio)
+            batch_neg_items.append(neg_item)
         
         return (
             torch.tensor(batch_users, dtype=torch.long, device=self.device),
@@ -273,7 +266,7 @@ class LightGCNTrainer:
     
     def train_epoch(self, edge_index: torch.Tensor, interaction_matrix: np.ndarray,
                    optimizer: torch.optim.Optimizer, batch_size: int = 1024,
-                   n_batches: int = 100) -> float:
+                   n_batches: int = 50) -> float:
         """
         训练一个epoch
         
